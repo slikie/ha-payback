@@ -13,12 +13,17 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers import storage
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.util import dt as dt_util
 
-from .api import PaybackAccount, PaybackAPIClient
+from .api import PaybackAccount, PaybackAPIClient, PaybackAuthError
 from .const import (
+    CONF_ACCESS_TOKEN,
     CONF_AUTO_ACTIVATE_COUPONS,
+    CONF_BASIC_AUTH_CREDENTIAL,
+    CONF_BASIC_AUTH_USERNAME,
     CONF_PASSWORD,
+    CONF_PRINCIPAL,
     CONF_SESSION_COOKIE,
     CONF_UPDATE_INTERVAL,
     CONF_USERNAME,
@@ -59,6 +64,10 @@ class PaybackDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             username=self.username,
             password=self.password,
             session_cookie=session_cookie,
+            basic_auth_username=config.get(CONF_BASIC_AUTH_USERNAME),
+            basic_auth_credential=config.get(CONF_BASIC_AUTH_CREDENTIAL),
+            principal=config.get(CONF_PRINCIPAL),
+            access_token=config.get(CONF_ACCESS_TOKEN),
         )
 
         interval_hours = max(
@@ -149,6 +158,12 @@ class PaybackDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # Save to persistent storage to survive restarts
                 await self.store.async_save(data)
                 return data
+
+            except PaybackAuthError as exc:
+                # Wrong credentials, or the app Basic-auth credentials are missing.
+                # Backing off cannot fix either, so ask Home Assistant to prompt for
+                # re-authentication instead of retrying (and hiding) forever.
+                raise ConfigEntryAuthFailed(str(exc)) from exc
 
             except Exception as exc:
                 self._consecutive_failures += 1

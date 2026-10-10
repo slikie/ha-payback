@@ -15,6 +15,7 @@
     },
     "error": {
       "auth_failed": "Authentication with PAYBACK failed. Please check your credentials.",
+      "cannot_connect": "Could not reach the PAYBACK API (network, or the request was rejected). Check the log for the HTTP status.",
       "unknown": "Unknown error occurred."
     }
   },

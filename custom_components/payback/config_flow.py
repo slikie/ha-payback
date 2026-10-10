@@ -13,10 +13,14 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 
-from .api import PaybackAPIClient
+from .api import DEFAULT_PRINCIPAL, PaybackAPIClient, PaybackApiError, PaybackAuthError
 from .const import (
+    CONF_ACCESS_TOKEN,
     CONF_AUTO_ACTIVATE_COUPONS,
+    CONF_BASIC_AUTH_CREDENTIAL,
+    CONF_BASIC_AUTH_USERNAME,
     CONF_PASSWORD,
+    CONF_PRINCIPAL,
     CONF_SESSION_COOKIE,
     CONF_UPDATE_INTERVAL,
     CONF_USERNAME,
@@ -44,34 +48,48 @@ class PaybackConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(username.lower())
             self._abort_if_unique_id_configured()
 
-            # Test credentials
+            # Validate the credentials. login() raises on failure now instead of
+            # returning a flag that was True no matter what happened.
+            auth: dict[str, Any] = {
+                CONF_USERNAME: username,
+                CONF_PASSWORD: password,
+                CONF_SESSION_COOKIE: user_input.get(CONF_SESSION_COOKIE, "").strip(),
+                CONF_PRINCIPAL: user_input.get(CONF_PRINCIPAL, "").strip(),
+                CONF_BASIC_AUTH_USERNAME: user_input.get(
+                    CONF_BASIC_AUTH_USERNAME, ""
+                ).strip(),
+                CONF_BASIC_AUTH_CREDENTIAL: user_input.get(
+                    CONF_BASIC_AUTH_CREDENTIAL, ""
+                ).strip(),
+                CONF_ACCESS_TOKEN: user_input.get(CONF_ACCESS_TOKEN, "").strip(),
+            }
             client = PaybackAPIClient(
                 username=username,
                 password=password,
-                session_cookie=user_input.get(CONF_SESSION_COOKIE, "").strip() or None,
+                session_cookie=auth[CONF_SESSION_COOKIE] or None,
+                principal=auth[CONF_PRINCIPAL] or None,
+                basic_auth_username=auth[CONF_BASIC_AUTH_USERNAME] or None,
+                basic_auth_credential=auth[CONF_BASIC_AUTH_CREDENTIAL] or None,
+                access_token=auth[CONF_ACCESS_TOKEN] or None,
             )
             try:
-                valid = await self.hass.async_add_executor_job(client.login)
-                if valid:
-                    return self.async_create_entry(
-                        title=f"PAYBACK ({username})",
-                        data={
-                            CONF_USERNAME: username,
-                            CONF_PASSWORD: password,
-                            CONF_SESSION_COOKIE: user_input.get(
-                                CONF_SESSION_COOKIE, ""
-                            ).strip(),
-                        },
-                    )
+                await self.hass.async_add_executor_job(client.login)
+            except PaybackAuthError:
                 errors["base"] = "auth_failed"
-            except Exception:
-                errors["base"] = "auth_failed"
+            except PaybackApiError:
+                errors["base"] = "cannot_connect"
+            else:
+                return self.async_create_entry(title=f"PAYBACK ({username})", data=auth)
 
         schema = vol.Schema(
             {
                 vol.Required(CONF_USERNAME): str,
                 vol.Required(CONF_PASSWORD): str,
                 vol.Optional(CONF_SESSION_COOKIE, default=""): str,
+                vol.Optional(CONF_PRINCIPAL, default=DEFAULT_PRINCIPAL): str,
+                vol.Optional(CONF_BASIC_AUTH_USERNAME, default=""): str,
+                vol.Optional(CONF_BASIC_AUTH_CREDENTIAL, default=""): str,
+                vol.Optional(CONF_ACCESS_TOKEN, default=""): str,
             }
         )
 
@@ -117,6 +135,24 @@ class PaybackOptionsFlowHandler(OptionsFlow):
                 vol.Optional(
                     CONF_SESSION_COOKIE,
                     default=config.get(CONF_SESSION_COOKIE, ""),
+                ): str,
+                # Auth options live here too, so a rejected login can be fixed
+                # without deleting and re-adding the integration.
+                vol.Optional(
+                    CONF_PRINCIPAL,
+                    default=config.get(CONF_PRINCIPAL, DEFAULT_PRINCIPAL),
+                ): str,
+                vol.Optional(
+                    CONF_BASIC_AUTH_USERNAME,
+                    default=config.get(CONF_BASIC_AUTH_USERNAME, ""),
+                ): str,
+                vol.Optional(
+                    CONF_BASIC_AUTH_CREDENTIAL,
+                    default=config.get(CONF_BASIC_AUTH_CREDENTIAL, ""),
+                ): str,
+                vol.Optional(
+                    CONF_ACCESS_TOKEN,
+                    default=config.get(CONF_ACCESS_TOKEN, ""),
                 ): str,
             }
         )
