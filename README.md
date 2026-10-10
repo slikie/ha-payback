@@ -1,3 +1,33 @@
+
+## This is a fixed fork — read this first
+
+Upstream 1.0.0 **cannot work, and cannot say so.** This fork fixes the API client. The evidence for every claim below is in [`docs/API-AND-AUTH.md`](docs/API-AND-AUTH.md).
+
+**What was wrong**
+
+1. It called `https://www.payback.de/pb/v1/{sessions,account}` — both return **404**. The real API is `services-ext.payback.de/<principal>/v1/json/<action>`; probing it returns **401**, i.e. the host exists and wants credentials the client never sent.
+2. `login()` returned `True` on the success path *and* on the exception path, so a rejected login was indistinguishable from a good one.
+3. `get_account()` returned a **fabricated** account on error — placeholder customer name, zero points, no coupons — which is what the sensors published while Home Assistant reported `success: True`.
+
+**What this fork changes**
+
+- Correct endpoints, payloads and coupon schema, plus the HTTP Basic auth the host requires.
+- Failures raise `PaybackAuthError` / `PaybackApiError`; an auth failure surfaces as a re-authentication prompt instead of silent zeros.
+- Three authentication routes: app credentials + login, a pre-supplied **access token** (no captcha, no app reverse-engineering), or a browser **session cookie**.
+- 12 offline tests — `python tests/test_api_offline.py` — no network, no credentials.
+
+**Install**
+
+1. HACS → ⋮ → *Custom repositories*
+2. Add `https://github.com/slikie/ha-payback` as type **Integration**
+3. Install, then restart Home Assistant
+
+Remove upstream first if you have it installed: both declare the `payback` domain.
+
+**Still required: a credential.** The API needs authentication. The token route is the practical one — it needs no app reverse-engineering and no captcha. The points-balance *response* schema is the single piece that is not verified (the reference implementation never reads a field of it), so `_parse_points()` accepts several plausible spellings and logs the keys it actually sees; check it against one live response before trusting those numbers.
+
+---
+
 <div align="center">
   <h1>PAYBACK Deutschland (for Home Assistant) 💳</h1>
   <p><strong>A secure, robust Home Assistant integration that fetches your PAYBACK points balance, active & available coupons, and account activity directly using TLS-impersonated mobile API clients.</strong></p>
