@@ -35,8 +35,11 @@ All calls are `POST` to `https://services-ext.payback.de/<principal>/v1/json/<ac
 
 Facts established by probing:
 
-* `.../json/getcoupons` returns **401 Authorization Required**. The host and path
-  exist and want credentials — that 401 (not a 404) is the evidence for this shape.
+* A **GET** on `.../json/getaccountbalance` returns **405 Not Allowed** from openresty.
+  That is the real evidence the path exists and that POST is the only method.
+* An earlier claim that a **401** proved the endpoint was **wrong**: that 401 is
+  Imperva's bot-challenge page (`_Incapsula_Resource`), served in front of the API to
+  non-browser clients. It says nothing about whether the path exists.
 * `principal` (138/139 in the reference) appears **both** in the URL and inside
   every request body under `consumerIdentification`.
 
@@ -56,6 +59,28 @@ Payload shapes and endpoint names come from the reverse-engineered reference
 The 1.0.0 models did not match this at all — `couponId` vs `couponID`, and
 `title`/`description`/`partnerName`/`validUntil` are not fields of the real
 schema (they only ever existed because the models were fed fabricated data).
+
+## The WAF wall — read this before debugging anything
+
+`services-ext.payback.de` sits behind Imperva (Incapsula). Measured behaviour:
+
+| Client | Request | Result |
+| --- | --- | --- |
+| curl_cffi, Chrome TLS impersonation | POST `/139/v1/json/getaccountbalance` | 401, Imperva challenge page |
+| Real Chromium, GET navigation | same path | **405 Not Allowed** (from openresty) |
+| Real Chromium, POST same-origin | same path, with *or* without `Authorization` | **held indefinitely — no response at all** |
+| Real Chromium, POST same-origin | `/` (no API path) | 404, immediate |
+| Real Chromium, POST cross-origin from www.payback.de | same path | preflight fails outright |
+
+POSTs to the API paths are **tarpitted**, not refused, while unrelated paths on the
+same host answer at once. So this is not a credential problem that better code can
+solve: a datacenter host cannot reach this API, and an integration running on cloud
+hosting will fail however correct the authentication is.
+
+The request has to originate where a real, logged-in browser session lives — a
+residential IP — and the WAF's session cookies are bound to that client. Practical
+rule: never judge this integration from a cloud host; verify changes from the machine
+that is actually logged in.
 
 ## Authentication: three routes
 
