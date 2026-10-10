@@ -16,6 +16,7 @@
     },
     "error": {
       "auth_failed": "Anmeldung bei PAYBACK fehlgeschlagen. Bitte überprüfe deine Zugangsdaten.",
+      "cannot_connect": "Die PAYBACK-API war nicht erreichbar (Netzwerk oder abgelehnte Anfrage). Details stehen im Log.",
       "unknown": "Unbekannter Fehler aufgetreten."
     }
   },
